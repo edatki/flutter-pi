@@ -21,6 +21,9 @@
 
 #define MAX_N_PLANES 4
 
+// Keep copied frames in a 2D BO; GBM drivers commonly cap the maximum row width at 4096.
+#define GBM_COPY_WIDTH 4096u
+
 #define GSTREAMER_VER(major, minor, patch) ((((major) &0xFF) << 16) | (((minor) &0xFF) << 8) | ((patch) &0xFF))
 #define THIS_GSTREAMER_VER GSTREAMER_VER(LIBGSTREAMER_VERSION_MAJOR, LIBGSTREAMER_VERSION_MINOR, LIBGSTREAMER_VERSION_PATCH)
 
@@ -358,6 +361,9 @@ UNUSED int dup_gst_buffer_range_as_dmabuf(struct gbm_device *gbm_device, GstBuff
     struct gbm_bo *bo;
     GstMapInfo map_info;
     uint32_t stride;
+    uint32_t width = GBM_COPY_WIDTH;
+    uint32_t height;
+    size_t height_size;
     gboolean gst_ok;
     void *map, *map_data;
     int fd;
@@ -368,14 +374,21 @@ UNUSED int dup_gst_buffer_range_as_dmabuf(struct gbm_device *gbm_device, GstBuff
         return -1;
     }
 
-    bo = gbm_bo_create(gbm_device, map_info.size, 1, GBM_FORMAT_R8, GBM_BO_USE_LINEAR);
+    height_size = map_info.size / width + (map_info.size % width != 0);
+    if (height_size == 0 || height_size > UINT32_MAX) {
+        LOG_ERROR("Video frame is too large to copy into a GBM BO.\n");
+        goto fail_unmap_buffer;
+    }
+    height = (uint32_t) height_size;
+
+    bo = gbm_bo_create(gbm_device, width, height, GBM_FORMAT_R8, GBM_BO_USE_LINEAR);
     if (bo == NULL) {
         LOG_ERROR("Couldn't create GBM BO to copy video frame into.\n");
         goto fail_unmap_buffer;
     }
 
     map_data = NULL;
-    map = gbm_bo_map(bo, 0, 0, map_info.size, 1, GBM_BO_TRANSFER_WRITE, &stride, &map_data);
+    map = gbm_bo_map(bo, 0, 0, width, height, GBM_BO_TRANSFER_WRITE, &stride, &map_data);
     if (map == NULL) {
         LOG_ERROR("Couldn't mmap GBM BO to copy video frame into it.\n");
         goto fail_destroy_bo;
@@ -414,6 +427,9 @@ UNUSED int dup_gst_memory_as_dmabuf(struct gbm_device *gbm_device, GstMemory *me
     struct gbm_bo *bo;
     GstMapInfo map_info;
     uint32_t stride;
+    uint32_t width = GBM_COPY_WIDTH;
+    uint32_t height;
+    size_t height_size;
     gboolean gst_ok;
     void *map, *map_data;
     int fd;
@@ -426,14 +442,21 @@ UNUSED int dup_gst_memory_as_dmabuf(struct gbm_device *gbm_device, GstMemory *me
 
     pthread_mutex_lock(&gbm_lock);
 
-    bo = gbm_bo_create(gbm_device, map_info.size, 1, GBM_FORMAT_R8, GBM_BO_USE_LINEAR);
+    height_size = map_info.size / width + (map_info.size % width != 0);
+    if (height_size == 0 || height_size > UINT32_MAX) {
+        LOG_ERROR("Video frame is too large to copy into a GBM BO.\n");
+        goto fail_unlock_gbm;
+    }
+    height = (uint32_t) height_size;
+
+    bo = gbm_bo_create(gbm_device, width, height, GBM_FORMAT_R8, GBM_BO_USE_LINEAR);
     if (bo == NULL) {
         LOG_ERROR("Couldn't create GBM BO to copy video frame into.\n");
         goto fail_unlock_gbm;
     }
 
     map_data = NULL;
-    map = gbm_bo_map(bo, 0, 0, map_info.size, 1, GBM_BO_TRANSFER_WRITE, &stride, &map_data);
+    map = gbm_bo_map(bo, 0, 0, width, height, GBM_BO_TRANSFER_WRITE, &stride, &map_data);
     if (map == NULL) {
         LOG_ERROR("Couldn't mmap GBM BO to copy video frame into it.\n");
         goto fail_destroy_bo;

@@ -963,6 +963,7 @@ static int init(struct gstplayer *player, bool force_sw_decoders) {
     if (state_change_return == GST_STATE_CHANGE_NO_PREROLL) {
         LOG_DEBUG("Is Live!\n");
         player->is_live = true;
+        gst_element_set_state(GST_ELEMENT(pipeline), GST_STATE_PLAYING); // Fix to get RTSP working
     } else {
         LOG_DEBUG("Not live!\n");
         player->is_live = false;
